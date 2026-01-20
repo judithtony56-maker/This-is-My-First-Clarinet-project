@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Todo dApp</title>
+
+  <!-- Stacks SDK -->
+  <script src="https://unpkg.com/@stacks/connect@7.6.1/dist/connect.umd.js"></script>
+  <script src="https://unpkg.com/@stacks/transactions@7.6.1/dist/transactions.umd.js"></script>
+  <script src="https://unpkg.com/@stacks/network@7.6.1/dist/network.umd.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      display: flex;
+      justify-content: center;
+      padding-top: 50px;
+    }
+
+    .app {
+      background: white;
+      width: 400px;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,.1);
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    input {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+    }
+
+    button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      cursor: pointer;
+    }
+
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    li {
+      background: #eee;
+      margin-top: 8px;
+      padding: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .done {
+      text-decoration: line-through;
+      color: gray;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <h1>📝 Todo dApp</h1>
+
+    <button onclick="connectWallet()">Connect Wallet</button>
+
+    <input id="todoInput" placeholder="New todo" />
+    <button onclick="addTodo()">Add Todo</button>
+
+    <ul id="todoList"></ul>
+  </div>
+
+<script>
+  const appConfig = new stacksConnect.AppConfig(['store_write']);
+  const userSession = new stacksConnect.UserSession({ appConfig });
+
+  const network = new stacksNetwork.StacksTestnet();
+
+  const CONTRACT_ADDRESS = 'STXXXXXXXXXXXXXXX'; // 👈 replace
+  const CONTRACT_NAME = 'todo';
+
+  function connectWallet() {
+    stacksConnect.showConnect({
+      appDetails: {
+        name: 'Todo dApp',
+        icon: window.location.origin + '/logo.png',
+      },
+      userSession,
+      onFinish: loadTodos
+    });
+  }
+
+  function addTodo() {
+    const text = document.getElementById('todoInput').value;
+    if (!text) return;
+
+    stacksTransactions.openContractCall({
+      contractAddress: CONTRACT_ADDRESS,
+      contractName: CONTRACT_NAME,
+      functionName: 'add-todo',
+      functionArgs: [stacksTransactions.stringAsciiCV(text)],
+      network,
+      postConditionMode: 1,
+      onFinish: () => {
+        document.getElementById('todoInput').value = '';
+        loadTodos();
+      }
+    });
+  }
+
+  async function loadTodos() {
+    const user = userSession.loadUserData().profile.stxAddress.testnet;
+
+    const countCV = await stacksTransactions.callReadOnlyFunction({
+      contractAddress: CONTRACT_ADDRESS,
+      contractName: CONTRACT_NAME,
+      functionName: 'get-todo-count',
+      functionArgs: [stacksTransactions.standardPrincipalCV(user)],
+      network,
+      senderAddress: user,
+    });
+
+    const count = Number(countCV.value.value);
+    const list = document.getElementById('todoList');
+    list.innerHTML = '';
+
+    for (let i = 1; i <= count; i++) {
+      const todoCV = await stacksTransactions.callReadOnlyFunction({
+        contractAddress: CONTRACT_ADDRESS,
+        contractName: CONTRACT_NAME,
+        functionName: 'get-todo',
+        functionArgs: [
+          stacksTransactions.standardPrincipalCV(user),
+          stacksTransactions.uintCV(i)
+        ],
+        network,
+        senderAddress: user,
+      });
+
+      if (todoCV.value) {
+        const text = todoCV.value.data.description.data;
+        const done = todoCV.value.data.completed.value;
+
+        const li = document.createElement('li');
+        li.innerHTML = `
+          <span class="${done ? 'done' : ''}">${text}</span>
+        `;
+        list.appendChild(li);
+      }
+    }
+  }
+
+  if (userSession.isUserSignedIn()) {
+    loadTodos();
+  }
+</script>
+</body>
+</html>
